@@ -1,0 +1,102 @@
+/* SyncDBJOB — หน้าเข้าสู่ระบบ (ไฟล์นี้ต้องเข้าถึงได้โดยไม่ต้องล็อกอิน) */
+:root {
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --ink: #1b2330;
+  --muted: #6b7787;
+  --line: #dfe4ec;
+  --brand: #2f5597;
+  --brand-dark: #23407a;
+  --err: #c0392b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--brand-dark), var(--brand));
+  color: var(--ink);
+  font-family: "Segoe UI", Tahoma, "Noto Sans Thai", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.wrap { width: 100%; max-width: 380px; padding: 24px; }
+
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 28px 26px 26px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--brand-dark);
+}
+.brand span { color: #e8a33d; }
+
+h1 {
+  margin: 10px 0 4px;
+  font-size: 19px;
+  color: var(--ink);
+}
+
+.muted { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
+label {
+  display: block;
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(47, 85, 151, 0.15);
+}
+
+.msg {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid #f0c9c3;
+  background: #fdecea;
+  color: var(--err);
+}
+
+.btn {
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }

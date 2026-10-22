@@ -15,6 +15,8 @@ const state = {
   mapping: [],
   targetTable: '',
   mappingId: null,
+  user: null,
+  isAdmin: true,
 };
 
 const TYPES = ['string', 'int', 'bigint', 'decimal', 'float', 'bool', 'date', 'datetime', 'timestamp', 'json'];
@@ -27,8 +29,14 @@ const esc = (v) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
+function redirectToLogin() {
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+}
+
 async function api(path, options = {}) {
-  const res = await fetch('/api' + path, options);
+  const res = await fetch('/api' + path, { credentials: 'same-origin', ...options });
   const text = await res.text();
   let data = {};
   try {
@@ -36,11 +44,47 @@ async function api(path, options = {}) {
   } catch {
     data = { error: text };
   }
+  if (res.status === 401 && data.authRequired) {
+    redirectToLogin();
+    throw new Error(data.error || 'กรุณาเข้าสู่ระบบ');
+  }
   if (!res.ok || data.ok === false) {
     throw new Error(data.error || `HTTP ${res.status}`);
   }
   return data;
 }
+
+/* ---------------- ผู้ใช้ที่ล็อกอิน ---------------- */
+async function loadMe() {
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.authEnabled === false) return;
+    state.user = data.user || null;
+    state.isAdmin = String(state.user?.role || '').toUpperCase() === 'ADMIN';
+    const box = $('userBox');
+    if (state.user) {
+      box.hidden = false;
+      $('userInfo').textContent = `${state.user.fullName || state.user.username} (${state.user.role})`;
+    }
+  } catch {
+    /* ยังเข้าไม่ได้ — ปล่อยให้หน้าโหลดตามปกติ */
+  }
+}
+
+$('btnLogout').addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {
+    /* ไม่เป็นไร */
+  }
+  window.location.href = '/login';
+});
 
 let toastTimer = null;
 function toast(message, kind = '') {
@@ -518,7 +562,7 @@ async function loadMappings() {
                 <td>${esc(m.updatedAt)}</td>
                 <td>
                   <button class="btn btn-ghost" data-load="${esc(m.id)}">ใช้งาน</button>
-                  <button class="btn btn-danger" data-del="${esc(m.id)}">ลบ</button>
+                  ${state.isAdmin ? `<button class="btn btn-danger" data-del="${esc(m.id)}">ลบ</button>` : ''}
                 </td></tr>`,
             )
             .join('')
@@ -640,5 +684,6 @@ $('btnReloadJobs').addEventListener('click', loadJobs);
 $('btnReloadTables').addEventListener('click', loadTables);
 
 /* ---------------- เริ่มต้น ---------------- */
+loadMe();
 loadHealth();
 loadTables();

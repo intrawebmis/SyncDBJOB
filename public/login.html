@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>เข้าสู่ระบบ — SyncDBJOB</title>
+    <link rel="stylesheet" href="/login.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <form class="card" id="loginForm" autocomplete="on">
+        <div class="brand">SyncDB<span>JOB</span></div>
+        <h1>เข้าสู่ระบบ</h1>
+        <p class="muted">กรุณาใช้บัญชีผู้ใช้จากระบบเพื่อเข้าใช้งานเครื่องมือนำเข้าข้อมูล</p>
+
+        <label for="username">ชื่อผู้ใช้</label>
+        <input type="text" id="username" name="username" required autocomplete="username" autofocus />
+
+        <label for="password">รหัสผ่าน</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password" />
+
+        <div id="msg" class="msg" hidden></div>
+
+        <button type="submit" class="btn btn-primary" id="btnLogin">เข้าสู่ระบบ</button>
+      </form>
+    </div>
+    <script src="/login.js"></script>
+  </body>
+</html>

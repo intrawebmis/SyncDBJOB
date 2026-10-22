@@ -6,6 +6,7 @@ import { MappingConfigSchema, type MappingConfig } from '../config/schema';
 import { logger } from '../utils/logger';
 
 const storageRoot = path.resolve(process.cwd(), env.STORAGE_DIR);
+export { storageRoot };
 export const mappingsDir = path.join(storageRoot, 'mappings');
 export const uploadsDir = path.join(storageRoot, 'uploads');
 

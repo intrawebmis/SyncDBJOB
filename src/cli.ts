@@ -18,6 +18,8 @@ import {
 } from './db/introspect';
 import { runSyncJob, summarize } from './core/job';
 import { buildCreateTableSql } from './core/upsert';
+import { hashPassword } from './auth/password';
+import { listUsers, removeUser, setUserActive, upsertUser } from './db/users';
 import { validateRows } from './core/validate';
 import { readSheet, detectHeaderRow } from './excel/reader';
 import { generateTemplate } from './excel/template';
@@ -303,6 +305,115 @@ program
             String(log.failedRows),
         );
       }
+    });
+  });
+
+program
+  .command('user')
+  .description('จัดการผู้ใช้สำหรับเข้าสู่ระบบ (ตารางผู้ใช้ในฐานข้อมูล)')
+  .action(() => {
+    program.outputHelp();
+  });
+
+const userCmd = program.commands.find((c) => c.name() === 'user');
+
+userCmd
+  ?.command('list')
+  .description('แสดงรายชื่อผู้ใช้ทั้งหมด')
+  .action(async () => {
+    await withDb(async ({ db }) => {
+      const users = await listUsers(db, env.AUTH_USERS_TABLE);
+      if (users.length === 0) {
+        console.log(`ไม่พบผู้ใช้ในตาราง "${env.AUTH_USERS_TABLE}"`);
+        return;
+      }
+      console.log('USERNAME'.padEnd(20) + 'ROLE'.padEnd(10) + 'สถานะ'.padEnd(10) + 'ชื่อ-นามสกุล');
+      for (const u of users) {
+        console.log(
+          u.username.padEnd(20) +
+            u.role.padEnd(10) +
+            (u.active ? 'ใช้งาน' : 'ปิดใช้งาน').padEnd(10) +
+            (u.fullName ?? ''),
+        );
+      }
+    });
+  });
+
+userCmd
+  ?.command('add')
+  .requiredOption('-u, --username <name>', 'ชื่อผู้ใช้')
+  .requiredOption('-p, --password <pass>', 'รหัสผ่าน')
+  .option('--full-name <name>', 'ชื่อ-นามสกุล')
+  .option('-r, --role <role>', 'บทบาท (ADMIN หรือ USER)', 'USER')
+  .option('--inactive', 'สร้างบัญชีในสถานะปิดใช้งาน')
+  .description('เพิ่มผู้ใช้ใหม่ หรือตั้งรหัสผ่านใหม่ของผู้ใช้ที่มีอยู่แล้ว')
+  .action(
+    async (options: {
+      username: string;
+      password: string;
+      fullName?: string;
+      role: string;
+      inactive?: boolean;
+    }) => {
+      if (options.password.length < 6) {
+        logger.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+        process.exitCode = 1;
+        return;
+      }
+      const hash = await hashPassword(options.password);
+      await withDb(async ({ db }) => {
+        const result = await upsertUser(db, env.AUTH_USERS_TABLE, {
+          username: options.username.trim(),
+          passwordHash: hash,
+          fullName: options.fullName ?? null,
+          role: options.role.toUpperCase(),
+          active: !options.inactive,
+        });
+        console.log(
+          result === 'created'
+            ? `สร้างผู้ใช้ "${options.username}" เรียบร้อย`
+            : `อัปเดตรหัสผ่านของ "${options.username}" เรียบร้อย`,
+        );
+      });
+    },
+  );
+
+userCmd
+  ?.command('enable')
+  .requiredOption('-u, --username <name>', 'ชื่อผู้ใช้')
+  .option('--disable', 'ปิดใช้งานแทนการเปิดใช้งาน')
+  .description('เปิด/ปิดการใช้งานบัญชี')
+  .action(async (options: { username: string; disable?: boolean }) => {
+    const active = !options.disable;
+    await withDb(async ({ db }) => {
+      const ok = await setUserActive(db, env.AUTH_USERS_TABLE, options.username.trim(), active);
+      if (!ok) {
+        logger.error(`ไม่พบผู้ใช้ "${options.username}"`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`บัญชี "${options.username}" ${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}เรียบร้อย`);
+    });
+  });
+
+userCmd
+  ?.command('remove')
+  .requiredOption('-u, --username <name>', 'ชื่อผู้ใช้')
+  .option('-y, --yes', 'ยืนยันการลบ (ไม่ถามอีก)')
+  .description('ลบผู้ใช้ออกจากตาราง')
+  .action(async (options: { username: string; yes?: boolean }) => {
+    if (!options.yes) {
+      console.log(`ยืนยันการลบผู้ใช้ "${options.username}"? (ใช้ --yes เพื่อยืนยันทันที)`);
+      return;
+    }
+    await withDb(async ({ db }) => {
+      const ok = await removeUser(db, env.AUTH_USERS_TABLE, options.username.trim());
+      if (!ok) {
+        logger.error(`ไม่พบผู้ใช้ "${options.username}"`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`ลบผู้ใช้ "${options.username}" เรียบร้อย`);
     });
   });
 

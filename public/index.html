@@ -9,7 +9,13 @@
   <body>
     <header class="topbar">
       <div class="brand">SyncDB<span>JOB</span></div>
-      <div class="conn" id="connInfo">กำลังตรวจสอบการเชื่อมต่อ…</div>
+      <div class="topbar-right">
+        <div class="conn" id="connInfo">กำลังตรวจสอบการเชื่อมต่อ…</div>
+        <div class="user-box" id="userBox" hidden>
+          <span class="user-name" id="userInfo"></span>
+          <button id="btnLogout" class="btn btn-ghost btn-sm" type="button">ออกจากระบบ</button>
+        </div>
+      </div>
     </header>
 
     <nav class="tabs">

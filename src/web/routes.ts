@@ -1,10 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import type { Pool } from 'mysql2/promise';
-import { dbConfig, describeDb } from '../config/env';
+import { dbConfig, describeDb, env } from '../config/env';
 import { MappingConfigSchema, type MappingConfig } from '../config/schema';
-import { createAdapter, createPool, detectDialect, ping } from '../db/client';
+import { createAdapter, detectDialect, ping } from '../db/client';
+import { getPool } from '../db/pool';
+import { getAuthService } from '../auth/service';
+import { clientKey, isSecureRequest, requireAuth, requireRole } from '../auth/middleware';
+import { buildSessionCookie, clearSessionCookie, parseCookies, SESSION_COOKIE } from '../auth/session';
 import {
   createJobLogTables,
   getColumns,
@@ -38,13 +41,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
 });
-
-let poolInstance: Pool | null = null;
-
-function getPool(): Pool {
-  if (!poolInstance) poolInstance = createPool(dbConfig());
-  return poolInstance;
-}
 
 function fail(res: Response, status: number, message: string, detail?: unknown): void {
   res.status(status).json({ ok: false, error: message, detail });
@@ -92,18 +88,77 @@ function pickTargetOf(config: MappingConfig, name?: string) {
 
 export function createApiRouter(): Router {
   const router = Router();
+  const auth = getAuthService();
 
-  router.get('/health', wrap(async (_req, res) => {
+  // ===== ระบบล็อกอิน (ไม่ต้องล็อกอิน) =====
+  router.post('/auth/login', wrap(async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const username = String(body.username ?? body.user ?? '').trim();
+    const password = String(body.password ?? '');
+    const result = await auth.login(username, password, clientKey(req));
+
+    if (!result.ok) {
+      res.status(401).json({ ok: false, error: result.error, authRequired: true });
+      return;
+    }
+
+    const cookieValue = result.cookieValue;
+    if (cookieValue) {
+      res.setHeader(
+        'Set-Cookie',
+        buildSessionCookie(cookieValue, {
+          maxAgeMs: env.APP_SESSION_TTL_HOURS * 60 * 60 * 1000,
+          secure: isSecureRequest(req),
+        }),
+      );
+    }
+    res.json({ ok: true, user: result.user });
+  }));
+
+  router.post('/auth/logout', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    auth.logout(cookies[SESSION_COOKIE]);
+    res.setHeader('Set-Cookie', clearSessionCookie(isSecureRequest(req)));
+    res.json({ ok: true });
+  });
+
+  router.get('/auth/me', (req, res) => {
+    if (!auth.enabled) {
+      res.json({
+        ok: true,
+        authEnabled: false,
+        user: { username: 'local', fullName: 'ผู้ใช้ในเครื่อง', role: 'ADMIN' },
+      });
+      return;
+    }
+    if (!req.authUser) {
+      res.status(401).json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อนใช้งาน', authRequired: true });
+      return;
+    }
+    res.json({ ok: true, authEnabled: true, user: req.authUser });
+  });
+
+  // ตรวจสุขภาพ — เปิดสาธารณะได้ แต่ถ้ายังไม่ล็อกอินจะไม่เผยข้อมูลฐานข้อมูล
+  router.get('/health', wrap(async (req, res) => {
     const pool = getPool();
     const result = await ping(pool);
-    res.json({
+    const authenticated = auth.enabled ? Boolean(req.authUser) : true;
+    const payload: Record<string, unknown> = {
       ok: true,
-      database: describeDb(dbConfig()),
       connected: result.ok,
-      version: result.version,
-      server: result.server,
-    });
+      authEnabled: auth.enabled,
+      authenticated,
+    };
+    if (authenticated) {
+      payload.database = describeDb(dbConfig());
+      payload.version = result.version;
+      payload.server = result.server;
+    }
+    res.json(payload);
   }));
+
+  // ===== ทุก route ต่อจากนี้ต้องล็อกอินก่อน =====
+  router.use(requireAuth(auth));
 
   router.get('/tables', wrap(async (_req, res) => {
     const pool = getPool();
@@ -225,12 +280,12 @@ export function createApiRouter(): Router {
     res.json({ ok: true, mapping: stored });
   }));
 
-  router.delete('/mappings/:id', wrap(async (req, res) => {
+  router.delete('/mappings/:id', requireRole(auth, 'ADMIN'), wrap(async (req, res) => {
     const removed = deleteMapping(String(req.params.id));
     res.json({ ok: removed });
   }));
 
-  router.delete('/uploads/:id', wrap(async (req, res) => {
+  router.delete('/uploads/:id', requireRole(auth, 'ADMIN'), wrap(async (req, res) => {
     const removed = deleteUpload(String(req.params.id));
     res.json({ ok: removed });
   }));

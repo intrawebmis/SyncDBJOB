@@ -32,6 +32,22 @@ const EnvSchema = z.object({
   APP_HOST: z.string().default('127.0.0.1'),
   APP_PORT: z.coerce.number().int().positive().default(3000),
 
+  // ===== ระบบล็อกอิน =====
+  /** เปิด/ปิดระบบล็อกอิน (true = ต้องล็อกอินก่อนใช้งาน) */
+  APP_AUTH_ENABLED: boolEnv(true),
+  /** ตารางที่เก็บผู้ใช้ (ต้องมีคอลัมน์ USERNAME, PASSWORD_HASH, USER_ACTIVE) */
+  AUTH_USERS_TABLE: z.string().default('newfin_users'),
+  /** คีย์สำหรับเซ็น cookie (ถ้าเว้นว่างจะสร้างและบันทึกไว้ใน storage/) */
+  APP_SESSION_SECRET: z.string().default(''),
+  /** อายุ session (ชั่วโมง) */
+  APP_SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
+  /** จำนวนครั้งที่ login ผิดพลาดได้ ก่อนล็อกบัญชีชั่วคราว */
+  APP_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  /** เวลาล็อกบัญชีชั่วคราว (นาที) */
+  APP_LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
+  /** เชื่อ proxy ข้างหน้า (nginx) — ใช้หา IP จริงของผู้ใช้ */
+  APP_TRUST_PROXY: boolEnv(false),
+
   SYNC_ON_ERROR: z.enum(['skip', 'abort']).default('skip'),
   SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(5000).default(1),
   CREATE_JOB_LOG_TABLE: boolEnv(true),

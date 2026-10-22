@@ -39,6 +39,29 @@ body {
 .conn.ok::before { content: "● "; color: #7ee2a8; }
 .conn.err::before { content: "● "; color: #ff8f7a; }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.user-name { font-size: 13px; }
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
 .tabs {
   display: flex;
   gap: 4px;

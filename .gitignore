@@ -8,6 +8,7 @@ storage/uploads/*
 storage/mappings/*.json
 !storage/mappings/.gitkeep
 storage/*.xlsx
+storage/.session-secret
 
 coverage/
 .DS_Store

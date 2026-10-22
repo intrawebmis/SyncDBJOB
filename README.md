@@ -29,6 +29,13 @@ cp .env.example .env        # Windows: copy .env.example .env
 npm run dev -- check
 ```
 
+ถ้าเปิด Web UI ต้องมีบัญชีผู้ใช้สำหรับล็อกอินด้วย (ดูรายละเอียดในหัวข้อ 3.3):
+
+```bash
+npm run dev -- user list                              # ดูผู้ใช้ที่มีอยู่
+npm run dev -- user add -u admin -p 'รหัสผ่าน' -r ADMIN  # เพิ่ม/ตั้งรหัสผ่านใหม่
+```
+
 ---
 
 ## 3. การใช้งาน
@@ -88,6 +95,69 @@ npm run dev -- jobs
 
 > เมื่อ `--batch-size > 1` และคำสั่งรวมแถวล้มเหลว ระบบจะ fallback ไปทำทีละแถวอัตโนมัติ
 > เพื่อหาแถวที่มีปัญหาจริง ๆ โดยไม่ทำให้ทั้งชุดล้มเหลว
+
+### 3.3 ระบบล็อกอิน (Login) 🔒
+
+Web UI มีระบบล็อกอินในตัวแอป **เปิดใช้งานโดยค่าเริ่มต้น** — ทุก route ของ API และทุกหน้าเว็บ
+จะถูกป้องกันด้วย session cookie (ไม่มีใครเข้ามาเขียนลงฐานข้อมูลจริงได้โดยไม่ล็อกอิน)
+
+**ผู้ใช้มาจากตาราง `newfin_users` ในฐานข้อมูล** (เปลี่ยนชื่อตารางได้ด้วย `AUTH_USERS_TABLE`)
+
+| คอลัมน์ที่ต้องมี | ใช้ทำอะไร |
+|---|---|
+| `USERNAME` | ชื่อผู้ใช้ (ต้อง UNIQUE) |
+| `PASSWORD_HASH` | รหัสผ่านแบบ **bcrypt** (`$2a$`/`$2b$`/`$2y$`) |
+| `FULL_NAME` | ชื่อ-นามสกุลที่แสดงบนหน้าเว็บ (ไม่บังคับ) |
+| `ROLE` | บทบาท — `ADMIN` ลบ mapping/ไฟล์ได้, `USER` ใช้งานทั่วไป |
+| `USER_ACTIVE` | `1` = ใช้งานได้, `0` = ปิดบัญชี |
+
+การทำงาน
+
+1. เปิดหน้าเว็บ → ระบบพาไปหน้า `/login` อัตโนมัติ
+2. กรอกชื่อผู้ใช้/รหัสผ่าน → ระบบตรวจสอบกับตารางผู้ใช้ → สร้าง session
+3. ใช้งานได้ตามปกติ ดูชื่อผู้ใช้/บทบาทมุมขวาบน และกด **ออกจากระบบ** เพื่อจบ session
+4. ถ้ายังไม่ล็อกอินแล้วเรียก API → ได้ `401 {"authRequired": true}` / เว็บ → redirect ไป `/login`
+
+ความปลอดภัยที่มี
+
+| เรื่อง | รายละเอียด |
+|---|---|
+| รหัสผ่าน | เก็บเป็น bcrypt hash — ระบบไม่เก็บรหัสผ่านจริง และไม่ log รหัสผ่าน |
+| Session | cookie ชื่อ `sdj_session` แบบ `HttpOnly` + `SameSite=Lax` (+ `Secure` เมื่อเข้าผ่าน HTTPS) |
+| ปลอมแปลง cookie | ค่า session ถูกเซ็นด้วย HMAC-SHA256 — แก้ค่าเองแล้วใช้ไม่ได้ |
+| เดารหัสผ่าน | ล็อกชั่วคราว 10 ครั้ง / 15 นาที (ต่อชื่อผู้ใช้ + IP) |
+| เดาชื่อผู้ใช้ | ข้อความ error เหมือนกันทั้ง "ไม่พบผู้ใช้" และ "รหัสผ่านผิด" |
+| สิทธิ์ | ลบ mapping / ลบไฟล์ที่อัปโหลด ต้องเป็น `ADMIN` |
+| `/api/health` | เข้าถึงได้โดยไม่ต้องล็อกอิน (ใช้ตรวจระบบ) แต่ซ่อนชื่อฐานข้อมูลไว้จนกว่าจะล็อกอิน |
+
+ตั้งค่าใน `.env`
+
+| ตัวแปร | ค่าเริ่มต้น | ความหมาย |
+|---|---|---|
+| `APP_AUTH_ENABLED` | `true` | เปิด/ปิดระบบล็อกอิน (ปิดไว้ได้เฉพาะตอนทดลองบนเครื่อง) |
+| `AUTH_USERS_TABLE` | `newfin_users` | ชื่อตารางผู้ใช้ |
+| `APP_SESSION_SECRET` | ว่าง | คีย์เซ็น cookie — ถ้าว่างจะสร้างและบันทึกที่ `storage/.session-secret` ให้อัตโนมัติ |
+| `APP_SESSION_TTL_HOURS` | `12` | อายุ session (ชั่วโมง) |
+| `APP_LOGIN_MAX_ATTEMPTS` | `10` | จำนวนครั้งที่ล้มเหลวได้ก่อนถูกล็อก |
+| `APP_LOGIN_LOCK_MINUTES` | `15` | เวลาล็อก (นาที) |
+| `APP_TRUST_PROXY` | `false` | เปิดเมื่อวางหลัง nginx/reverse proxy |
+
+จัดการผู้ใช้จาก CLI
+
+```bash
+npm run dev -- user list                                  # ดูผู้ใช้ทั้งหมด
+npm run dev -- user add -u admin -p 'รหัสผ่านใหม่' -r ADMIN   # เพิ่มผู้ใช้ / ตั้งรหัสผ่านใหม่
+npm run dev -- user add -u staff01 -p 'รหัสผ่าน' --full-name 'ชื่อ ทดสอบ'
+npm run dev -- user enable -u staff01                     # เปิดใช้งาน
+npm run dev -- user enable -u staff01 --disable           # ปิดใช้งาน
+npm run dev -- user remove -u staff01 --yes               # ลบผู้ใช้
+```
+
+> `user add` จะ **อัปเดตรหัสผ่าน** ของผู้ใช้เดิมถ้าชื่อซ้ำ (ใช้ตั้งรหัสผ่านใหม่ได้)
+> รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร
+
+> ⚠️ คำสั่ง CLI เหล่านี้ **ไม่ต้องล็อกอิน** เพราะรันจาก shell ของเซิร์ฟเวอร์ที่ผู้ดูแลถือสิทธิ์อยู่แล้ว
+> ให้จำกัดสิทธิ์ผู้ใช้ระบบ (`syncdb`) และสิทธิ์ไฟล์ `.env` ให้เหมาะสม
 
 ---
 
@@ -200,13 +270,14 @@ targets:
 src/
   cli.ts              คำสั่ง CLI ทั้งหมด
   server.ts           เว็บเซิร์ฟเวอร์ Express
+  auth/               ระบบล็อกอิน: password (bcrypt), session (cookie), service, middleware
   config/             อ่าน .env, schema ของไฟล์ mapping (zod)
   core/               ตรรกะหลัก: convert, validate, upsert (SQL), job
-  db/                 client (pool/transaction), introspect (information_schema, job log)
+  db/                 client (pool/transaction), pool, users (ตารางผู้ใช้), introspect
   excel/              reader (อ่านไฟล์), template (สร้างไฟล์ Template)
   store/              เก็บไฟล์ที่อัปโหลดและ mapping ที่บันทึกจาก Web UI
   web/routes.ts       REST API ทั้งหมด
-public/               Web UI (HTML/CSS/JS ไม่ต้อง build)
+public/               Web UI (HTML/CSS/JS ไม่ต้อง build) — index + login
 config/               ตัวอย่างไฟล์ mapping
 data/                 ไฟล์ข้อมูลตัวอย่าง
 scripts/              สร้างข้อมูลตัวอย่าง / smoke test
@@ -222,6 +293,20 @@ npm test            # unit tests (ไม่ต้องมีฐานข้อ�
 npm run typecheck   # ตรวจ TypeScript
 npm run smoke       # ทดสอบ API ของ Web UI (ต้องเปิด serve อยู่)
 ```
+
+ถ้าเปิดระบบล็อกอินไว้ (ค่าเริ่มต้น) ให้ส่งข้อมูลเข้าสู่ระบบตอนรัน smoke test:
+
+```bash
+# Windows PowerShell
+$env:SMOKE_USERNAME='admin'; $env:SMOKE_PASSWORD='xxxx'
+npm run smoke
+
+# Linux / macOS
+SMOKE_USERNAME=admin SMOKE_PASSWORD=xxxx npm run smoke
+```
+
+> ถ้าไม่ใส่ข้อมูล สคริปต์จะทดสอบเฉพาะส่วนที่ไม่ต้องล็อกอิน (เช่น หน้า `/login` และการตอบ 401) แล้วจบ
+> หรือปิดระบบล็อกอินชั่วคราวด้วย `APP_AUTH_ENABLED=false`
 
 ### ทดสอบกับ MySQL จริง
 
@@ -250,13 +335,16 @@ DB_HOST=127.0.0.1 DB_NAME=syncdb_test DB_USER=root DB_PASSWORD=yourpass DB_TEST=
 
 ### 9.1 ข้อควรระวังก่อนขึ้น Internet
 
-> 🔴 **ระบบยังไม่มีระบบ Login ภายในแอป** — ใครก็ตามที่เข้าถึง URL ได้
-> จะอัปโหลดไฟล์ และ **เขียน/แก้ไขข้อมูลในฐานข้อมูลจริง** ได้ทันที
+> ✅ **ระบบมี Login ภายในแอปแล้ว** (หัวข้อ 3.3) — ผู้ใช้ต้องล็อกอินด้วยบัญชีในตาราง `newfin_users`
+> ก่อนใช้งานจริง ตรวจสอบว่า:
+> - มีบัญชี `ADMIN` ที่รหัสผ่านถูกต้อง (ถ้าไม่รู้รหัสเดิม ใช้ `npm run dev -- user add -u admin -p 'รหัสใหม่' -r ADMIN`)
+> - `APP_AUTH_ENABLED=true` ใน `.env` และ `APP_TRUST_PROXY=true` ถ้าวางหลัง nginx
+> - ปิดบัญชีที่ไม่ใช้แล้ว (`npm run dev -- user enable -u <ชื่อ> --disable`)
 >
-> **ต้องปิดก่อนเสมอ** โดยเลือก 1 วิธี:
-> 1. **Basic Auth ของ nginx** (เร็วที่สุด — มีไฟล์ตัวอย่างให้แล้วใน `deploy/nginx.conf`)
-> 2. ผูกพอร์ตไว้ที่ `127.0.0.1` แล้วเข้าผ่าน VPN / SSH tunnel เท่านั้น (เหมาะกับระบบภายใน)
-> 3. เพิ่มระบบ Login ในตัวแอปเอง (แจ้งได้เพื่อให้เพิ่มให้)
+> ยังควรทำเพิ่ม (แนะนำ):
+> 1. ผูกพอร์ตไว้ที่ `127.0.0.1` แล้วเข้าผ่าน nginx (มีไฟล์ตัวอย่างใน `deploy/nginx.conf`)
+> 2. ใส่ **Basic Auth ของ nginx** อีกชั้นไว้หน้า ( defense in depth ) — มีไฟล์ `deploy/nginx.conf` ให้อยู่แล้ว
+> 3. ใช้ HTTPS (certbot) — cookie จะถูกตั้ง flag `Secure` อัตโนมัติเมื่อ request เป็น HTTPS
 
 ### 9.2 ทางเลือก A — Ubuntu/Debian VPS (nginx + systemd) แนะนำ
 
@@ -321,6 +409,8 @@ docker compose logs -f
 | `process.cwd()` | โค้ดอ้างอิง `public/` และ `storage/` ผ่าน cwd — service ต้องตั้ง `WorkingDirectory` ให้ถูก |
 | ไฟล์อัปโหลด | `storage/uploads/` สูงสุด 100MB/ไฟล์ ควรล้างไฟล์เก่าเป็นระยะ |
 | ประวัติงาน | เก็บในตาราง `sync_job_log` / `sync_job_error` (อยู่ในฐานข้อมูลจริง) |
+| ตารางผู้ใช้ | `newfin_users` (หรือตาม `AUTH_USERS_TABLE`) — ต้องมีสิทธิ์ `SELECT` และถ้าจะใช้คำสั่ง `user add` ต้องมี `INSERT`/`UPDATE` ด้วย |
+| ไฟล์ `storage/.session-secret` | คีย์เซ็น cookie — อยู่ใน `.gitignore` แล้ว ถ้าหาย session จะหมดอายุ (ผู้ใช้ล็อกอินใหม่ได้) |
 | nginx | `client_max_body_size 120M` ต้อง ≥ ขนาดไฟล์ที่อัปโหลดได้ |
 | สิทธิ์ DB | ควรใช้ user ที่มีสิทธิ์เฉพาะ `SELECT, INSERT, UPDATE, CREATE` บนตารางที่เกี่ยวข้อง |
 | สำเนาสำรอง | `mysqldump` ตารางประวัติงาน + โฟลเดอร์ `storage/` เป็นระยะ |
