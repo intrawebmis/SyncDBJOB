@@ -527,7 +527,11 @@ $('btnTemplate').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config: collectConfig(), outFile: `template_${state.targetTable}.xlsx` }),
     });
-    toast('สร้างไฟล์ template แล้ว: ' + data.file, 'ok');
+    const link = $('templateLink');
+    link.href = '/api/exports/' + encodeURIComponent(data.name);
+    link.textContent = 'ดาวน์โหลด ' + data.name;
+    link.hidden = false;
+    toast('สร้างไฟล์ template แล้ว: ' + data.name, 'ok');
   } catch (err) {
     toast('สร้าง template ไม่สำเร็จ: ' + err.message, 'err');
   }

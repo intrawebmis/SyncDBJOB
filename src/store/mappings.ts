@@ -9,6 +9,7 @@ const storageRoot = path.resolve(process.cwd(), env.STORAGE_DIR);
 export { storageRoot };
 export const mappingsDir = path.join(storageRoot, 'mappings');
 export const uploadsDir = path.join(storageRoot, 'uploads');
+export const exportsDir = path.join(storageRoot, 'exports');
 
 export interface StoredMapping {
   id: string;
@@ -126,4 +127,28 @@ export function listUploads(): Array<{ id: string; fileName: string; size: numbe
       return { id, fileName: f.slice(id.length + 1), size: stat.size, uploadedAt: stat.mtime.toISOString() };
     })
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+}
+
+/**
+ * แปลงชื่อไฟล์ที่ผู้ใช้ส่งมาเป็นพาธที่ปลอดภัย
+ *
+ * บังคับให้อยู่ในโฟลเดอร์ storage/exports เท่านั้น — กัน path traversal
+ * (เช่น ../../etc/passwd) และกันการเขียนไฟล์นอกโฟลเดอร์ที่ระบบอนุญาต
+ */
+export function resolveExportPath(fileName: string): string {
+  const raw = String(fileName ?? '').trim();
+  const base = path.basename(raw).replace(/[^\w.\- ]/g, '_').trim();
+  // ชื่อที่เป็นจุดล้วน (., .., ...) ใช้เป็นชื่อไฟล์ไม่ได้
+  const safe = base && !/^\.+$/.test(base) ? base : 'template.xlsx';
+  ensureDir(exportsDir);
+  return path.join(exportsDir, safe);
+}
+
+/** หาไฟล์ที่สร้างไว้ใน storage/exports (คืน null ถ้าไม่พบหรือชื่อไม่ปลอดภัย) */
+export function getExport(fileName: string): { file: string; name: string; size: number } | null {
+  const full = resolveExportPath(fileName);
+  if (!fs.existsSync(full)) return null;
+  const stat = fs.statSync(full);
+  if (!stat.isFile()) return null;
+  return { file: full, name: path.basename(full), size: stat.size };
 }

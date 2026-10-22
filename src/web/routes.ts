@@ -27,10 +27,12 @@ import { generateTemplate } from '../excel/template';
 import {
   deleteMapping,
   deleteUpload,
+  getExport,
   getMapping,
   getUpload,
   listMappings,
   listUploads,
+  resolveExportPath,
   saveMapping,
   saveUpload,
 } from '../store/mappings';
@@ -412,9 +414,20 @@ export function createApiRouter(): Router {
     const body = req.body as Record<string, unknown>;
     const { config } = resolveMapping(body);
     const target = pickTargetOf(config, typeof body.targetName === 'string' ? body.targetName : undefined);
-    const outFile = path.resolve(String(body.outFile ?? 'template.xlsx'));
+    // บังคับให้บันทึกไว้ใน storage/exports เท่านั้น (กัน path traversal)
+    const outFile = resolveExportPath(String(body.outFile ?? 'template.xlsx'));
     await generateTemplate(target, outFile);
-    res.json({ ok: true, file: outFile });
+    res.json({ ok: true, file: outFile, name: path.basename(outFile) });
+  }));
+
+  // ดาวน์โหลดไฟล์ที่สร้างไว้ใน storage/exports
+  router.get('/exports/:name', wrap(async (req, res) => {
+    const found = getExport(String(req.params.name));
+    if (!found) {
+      fail(res, 404, 'ไม่พบไฟล์ที่ต้องการดาวน์โหลด');
+      return;
+    }
+    res.download(found.file, found.name);
   }));
 
   router.get('/jobs', wrap(async (_req, res) => {

@@ -44,8 +44,8 @@ npm ci
 npm run build
 
 echo "==> [6/8] เตรียมโฟลเดอร์ storage"
-mkdir -p storage/uploads storage/mappings
-touch storage/uploads/.gitkeep storage/mappings/.gitkeep
+mkdir -p storage/uploads storage/mappings storage/exports
+touch storage/uploads/.gitkeep storage/mappings/.gitkeep storage/exports/.gitkeep
 
 if [ ! -f .env ]; then
     cp .env.example .env
@@ -60,6 +60,10 @@ if [ ! -f .env ]; then
     exit 1
 fi
 chmod 600 .env
+
+# ให้ service (User=syncdb) อ่าน .env และเขียน storage/ ได้
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+chmod 750 "${APP_DIR}" "${APP_DIR}/storage"
 
 echo "==> [7/8] ติดตั้ง systemd service"
 cp deploy/syncdbjob.service /etc/systemd/system/syncdbjob.service
