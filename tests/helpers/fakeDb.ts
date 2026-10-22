@@ -8,7 +8,7 @@ export interface FakeRow {
  * Fake DB ที่จำลองพฤติกรรม MySQL สำหรับ INSERT ... ON DUPLICATE KEY UPDATE
  * - แทรกแถวใหม่  -> affectedRows = 1
  * - อัปเดตแถวเดิม (ค่าเปลี่ยน) -> affectedRows = 2
- * - อัปเดตแถวเดิม (ค่าเดิม)  -> affectedRows = 0
+ * - อัปเดตแถวเดิม (ค่าเดิม)  -> affectedRows = 0 (MySQL) หรือ 1 (MariaDB)
  */
 export class FakeDb implements DbAdapter {
   readonly statements: Array<{ sql: string; params: unknown[] }> = [];
@@ -16,9 +16,30 @@ export class FakeDb implements DbAdapter {
   readonly tables = new Map<string, FakeRow[]>();
   keyColumns: string[] = [];
   failOn: (sql: string, params: unknown[]) => string | null = () => null;
+  /** จำลองพฤติกรรม MariaDB: ค่าเดิมคืน affectedRows = 1 (MySQL คืน 0) */
+  mariadbUnchangedAffectedRows = 0;
 
   async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T> {
     this.statements.push({ sql, params });
+
+    // รองรับคำสั่งตรวจ key ที่มีอยู่: SELECT `k` FROM `t` WHERE (`k`) IN ((?),(?))
+    const lookup = /SELECT\s+([\s\S]+?)\s+FROM\s+`([^`]+)`\s+WHERE\s+\(([^)]+)\)\s+IN\s+\(([\s\S]+)\)/i.exec(
+      sql,
+    );
+    if (lookup) {
+      const table = lookup[2];
+      const keyCols = lookup[3].split(',').map((c) => c.trim().replace(/`/g, ''));
+      const rows = this.tables.get(table) ?? [];
+      const wanted = new Set<string>();
+      for (let i = 0; i + keyCols.length <= params.length; i += keyCols.length) {
+        wanted.add(keyCols.map((_, k) => stringify(params[i + k])).join('|'));
+      }
+      const found = rows.filter((r) =>
+        wanted.has(keyCols.map((c) => stringify(r[c])).join('|')),
+      );
+      return found as T;
+    }
+
     if (/^SELECT/i.test(sql.trim())) return [] as T;
     return undefined as T;
   }
@@ -47,7 +68,12 @@ export class FakeDb implements DbAdapter {
 
     const same = columns.every((c) => stringify(existing[c]) === stringify(record[c]));
     Object.assign(existing, record);
-    return { rows: [], affectedRows: same ? 0 : 2, changedRows: same ? 0 : 1, insertId: 0 };
+    return {
+      rows: [],
+      affectedRows: same ? this.mariadbUnchangedAffectedRows : 2,
+      changedRows: same ? 0 : 1,
+      insertId: 0,
+    };
   }
 
   async beginTransaction(): Promise<void> {

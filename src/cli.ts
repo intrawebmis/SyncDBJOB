@@ -211,6 +211,7 @@ program
           dialect,
           onError,
           batchSize,
+          dryRun: options.dryRun === true,
           jobName: target.name,
         });
 

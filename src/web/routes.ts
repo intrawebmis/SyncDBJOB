@@ -298,30 +298,33 @@ export function createApiRouter(): Router {
         dialect,
         onError: body.onError === 'abort' ? 'abort' : 'skip',
         batchSize: Number(body.batchSize ?? 1) || 1,
+        dryRun: body.dryRun === true,
         jobName: target.name,
       });
 
-      await createJobLogTables(db);
-      await writeJobLog(db, {
-        jobId: result.jobId,
-        jobName: result.jobName,
-        fileName: result.fileName,
-        sheetName: result.sheet,
-        targetTable: result.table,
-        mode: result.mode,
-        status: result.status,
-        totalRows: result.totalRows,
-        insertedRows: result.inserted,
-        updatedRows: result.updated,
-        unchangedRows: result.unchanged,
-        failedRows: result.failed,
-        skippedRows: result.skipped,
-        durationMs: result.durationMs,
-        startedAt: result.startedAt,
-        finishedAt: result.finishedAt,
-        issues: result.issues.length > 0 ? JSON.stringify(result.issues.slice(0, 200)) : null,
-      });
-      await writeJobErrors(db, result.jobId, result.issues);
+      if (body.dryRun !== true) {
+        await createJobLogTables(db);
+        await writeJobLog(db, {
+          jobId: result.jobId,
+          jobName: result.jobName,
+          fileName: result.fileName,
+          sheetName: result.sheet,
+          targetTable: result.table,
+          mode: result.mode,
+          status: result.status,
+          totalRows: result.totalRows,
+          insertedRows: result.inserted,
+          updatedRows: result.updated,
+          unchangedRows: result.unchanged,
+          failedRows: result.failed,
+          skippedRows: result.skipped,
+          durationMs: result.durationMs,
+          startedAt: result.startedAt,
+          finishedAt: result.finishedAt,
+          issues: result.issues.length > 0 ? JSON.stringify(result.issues.slice(0, 200)) : null,
+        });
+        await writeJobErrors(db, result.jobId, result.issues);
+      }
 
       res.json({ ok: true, result });
     } finally {

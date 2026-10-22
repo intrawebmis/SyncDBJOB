@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { readSheet } from '../excel/reader';
 import { validateRows } from './validate';
-import { buildBulkInsertSql, buildUpsertSql } from './upsert';
+import {
+  buildBulkInsertSql,
+  buildKeyLookupSql,
+  buildUpsertSql,
+  keySignature,
+  keyTuple,
+} from './upsert';
 import { formatDateTime } from './convert';
 import type { TargetConfig } from '../config/schema';
 import type { DbAdapter, JobResult, RowIssue, RowOutcome, UpsertDialect } from './types';
@@ -18,6 +24,8 @@ export interface SyncJobOptions {
   onError?: 'skip' | 'abort';
   /** 1 = ทีละแถว (นับ insert/update แม่นยำ), >1 = รวมหลายแถวต่อคำสั่ง */
   batchSize?: number;
+  /** true = ตรวจสอบอย่างเดียว ไม่เขียนอะไรลงฐานข้อมูล */
+  dryRun?: boolean;
   jobName?: string;
   jobId?: string;
   now?: () => Date;
@@ -51,6 +59,54 @@ function classify(affectedRows: number): 'inserted' | 'updated' | 'unchanged' {
   return 'updated';
 }
 
+/**
+ * ตรวจว่า key ใดมีอยู่ในตารางแล้วบ้าง (ก่อนเขียน)
+ *
+ * จำเป็นเพราะ MariaDB คืน affectedRows=1 ทั้งตอน "insert ใหม่" และ "update ที่ค่าไม่เปลี่ยน"
+ * ทำให้แยกสองกรณีนี้จาก affectedRows อย่างเดียวไม่ได้
+ */
+export async function findExistingKeys(
+  db: DbAdapter,
+  target: TargetConfig,
+  rows: Array<Record<string, unknown>>,
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  if (target.keys.length === 0 || rows.length === 0) return found;
+
+  const tuples = rows.map((r) => keyTuple(target, r));
+  const CHUNK = 500;
+  for (let i = 0; i < tuples.length; i += CHUNK) {
+    const chunk = tuples.slice(i, i + CHUNK);
+    const { sql, params } = buildKeyLookupSql(target, chunk);
+    try {
+      const existing = await db.query<Array<Record<string, unknown>>>(sql, params);
+      for (const row of existing) {
+        const sig = keySignature(target.keys.map((k) => row[k] ?? null));
+        found.add(sig);
+      }
+    } catch (err) {
+      // ถ้าตรวจไม่ได้ (เช่น คอลัมน์ key ไม่ได้อยู่ในตาราง) ให้ข้ามไป ไม่ให้ล้มทั้งงาน
+      logger.warn('ตรวจสอบ key ที่มีอยู่ไม่สำเร็จ (จะนับจำนวนได้ไม่ละเอียด)', (err as Error).message);
+      return found;
+    }
+  }
+  return found;
+}
+
+/**
+ * จัดประเภทผลลัพธ์ของแถวหนึ่ง
+ * @param existed มี key นี้ในตารางอยู่แล้วหรือไม่ (ก่อนเขียน)
+ */
+export function classifyRow(
+  affectedRows: number,
+  existed: boolean | undefined,
+): 'inserted' | 'updated' | 'unchanged' {
+  if (existed === undefined) return classify(affectedRows);
+  if (!existed) return 'inserted';
+  // มีอยู่แล้ว: affectedRows=2 คือค่าเปลี่ยน, 1 คือค่าเดิม (MariaDB) / 0 (MySQL)
+  return affectedRows >= 2 ? 'updated' : 'unchanged';
+}
+
 function dbErrorMessage(err: unknown): string {
   const e = err as { code?: string; sqlMessage?: string; message?: string };
   if (e?.sqlMessage) return `${e.code ? `[${e.code}] ` : ''}${e.sqlMessage}`;
@@ -70,6 +126,7 @@ export async function runSyncJob(options: SyncJobOptions): Promise<JobResult> {
     dialect = 'odku-values',
     onError = 'skip',
     batchSize = 1,
+    dryRun = false,
     jobName,
   } = options;
 
@@ -102,6 +159,32 @@ export async function runSyncJob(options: SyncJobOptions): Promise<JobResult> {
     throw new SyncAbortedError(`ยกเลิกการนำเข้าที่แถว ${rowNumber}: ${message}`);
   };
 
+  const buildResult = (): JobResult => {
+    const finishedAt = new Date();
+    const status: JobResult['status'] =
+      failed === 0 ? 'success' : validation.totalRows === failed ? 'failed' : 'partial';
+    return {
+      jobId,
+      jobName: jobName ?? target.name,
+      fileName,
+      sheet: data.sheet,
+      table: target.table,
+      mode: target.mode,
+      status,
+      totalRows: validation.totalRows,
+      inserted,
+      updated,
+      unchanged,
+      failed,
+      skipped,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      issues,
+      outcomes,
+    };
+  };
+
   await db.beginTransaction();
   try {
     if (invalidRows.length > 0 && onError === 'abort') {
@@ -118,12 +201,35 @@ export async function runSyncJob(options: SyncJobOptions): Promise<JobResult> {
       });
     }
 
+    // ตรวจสอบ key ที่มีอยู่แล้วก่อนเขียน เพื่อให้นับ "เพิ่มใหม่ / อัปเดต / ไม่เปลี่ยน" แม่นยำ
+    // (MariaDB คืน affectedRows=1 ทั้งตอน insert ใหม่และ update ที่ค่าไม่เปลี่ยน)
+    const existingKeys = await findExistingKeys(
+      db,
+      target,
+      validRows.map((r) => r.values),
+    );
+    const existedOf = (values: Record<string, unknown>): boolean | undefined => {
+      if (target.keys.length === 0) return undefined;
+      return existingKeys.has(keySignature(keyTuple(target, values)));
+    };
+
+    if (dryRun) {
+      // โหมดทดลอง: ไม่เขียนอะไรลงฐานข้อมูลเลย แต่ยังรายงานว่าจะเพิ่มใหม่/อัปเดตกี่แถว
+      for (const row of validRows) {
+        const result: RowOutcome['result'] = existedOf(row.values) ? 'updated' : 'inserted';
+        if (result === 'inserted') inserted += 1;
+        else updated += 1;
+        outcomes.push({ rowNumber: row.rowNumber, result });
+      }
+      return buildResult();
+    }
+
     if (batchSize <= 1) {
       for (const row of validRows) {
         try {
           const { sql, params } = buildUpsertSql(target, row.values, dialect);
           const res = await db.execute(sql, params);
-          const result = classify(res.affectedRows);
+          const result = classifyRow(res.affectedRows, existedOf(row.values));
           if (result === 'inserted') inserted += 1;
           else if (result === 'updated') updated += 1;
           else unchanged += 1;
@@ -156,7 +262,7 @@ export async function runSyncJob(options: SyncJobOptions): Promise<JobResult> {
             try {
               const { sql, params } = buildUpsertSql(target, row.values, dialect);
               const res = await db.execute(sql, params);
-              const result = classify(res.affectedRows);
+              const result = classifyRow(res.affectedRows, existedOf(row.values));
               if (result === 'inserted') inserted += 1;
               else if (result === 'updated') updated += 1;
               else unchanged += 1;
@@ -201,29 +307,7 @@ export async function runSyncJob(options: SyncJobOptions): Promise<JobResult> {
     };
   }
 
-  const finishedAt = new Date();
-  const status: JobResult['status'] = failed === 0 ? 'success' : validation.totalRows === failed ? 'failed' : 'partial';
-
-  return {
-    jobId,
-    jobName: jobName ?? target.name,
-    fileName,
-    sheet: data.sheet,
-    table: target.table,
-    mode: target.mode,
-    status,
-    totalRows: validation.totalRows,
-    inserted,
-    updated,
-    unchanged,
-    failed,
-    skipped,
-    durationMs: finishedAt.getTime() - startedAt.getTime(),
-    startedAt: startedAt.toISOString(),
-    finishedAt: finishedAt.toISOString(),
-    issues,
-    outcomes,
-  };
+  return buildResult();
 }
 
 /**

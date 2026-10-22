@@ -15,6 +15,54 @@ export interface SqlStatement {
   params: unknown[];
 }
 
+/** สร้างคำสั่ง INSERT อย่างเดียว (ไม่มี ON DUPLICATE KEY UPDATE) */
+export function buildInsertSql(
+  target: TargetConfig,
+  values: Record<string, unknown>,
+): SqlStatement {
+  const cols = activeColumns(target);
+  const names = cols.map((c) => c.db);
+  const params = cols.map((c) => values[c.db] ?? null);
+  return {
+    sql: `INSERT INTO ${quoteIdent(target.table)} (${quoteIdents(names)}) VALUES (${names
+      .map(() => '?')
+      .join(', ')})`,
+    params,
+  };
+}
+
+/**
+ * ค่า key ของแถวหนึ่ง (ตามลำดับ target.keys)
+ */
+export function keyTuple(target: TargetConfig, values: Record<string, unknown>): unknown[] {
+  return target.keys.map((k) => values[k] ?? null);
+}
+
+/** สร้าง "ลายนิ้วมือ" ของ key เพื่อใช้เปรียบเทียบใน Set */
+export function keySignature(values: unknown[]): string {
+  return JSON.stringify(values.map((v) => (v === null || v === undefined ? null : String(v))));
+}
+
+/**
+ * สร้างคำสั่งตรวจว่า key ใดมีอยู่ในตารางแล้วบ้าง
+ * ใช้ประกอบการนับ "เพิ่มใหม่ / อัปเดต / ไม่เปลี่ยน" ให้แม่นยำบน MariaDB
+ * (MariaDB คืน affectedRows=1 ทั้งตอน insert ใหม่และตอน update ที่ค่าไม่เปลี่ยน)
+ */
+export function buildKeyLookupSql(
+  target: TargetConfig,
+  tuples: unknown[][],
+): SqlStatement {
+  const keyCols = target.keys;
+  const placeholders = tuples.map(() => `(${keyCols.map(() => '?').join(', ')})`).join(', ');
+  const params = tuples.flat();
+  return {
+    sql: `SELECT ${quoteIdents(keyCols)} FROM ${quoteIdent(target.table)}
+           WHERE (${quoteIdents(keyCols)}) IN (${placeholders})`,
+    params,
+  };
+}
+
+
 /** คอลัมน์ที่จะเขียนลง DB (ตัดคอลัมน์ที่ skip ออก) */
 export function activeColumns(target: TargetConfig): ColumnMapping[] {
   return target.columns.filter((c) => !c.skip);

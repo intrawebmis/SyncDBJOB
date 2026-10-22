@@ -1,5 +1,5 @@
 import mysql, { type Pool, type PoolConnection, type PoolOptions } from 'mysql2/promise';
-import { dbConfig, describeDb, type DbConfig } from '../config/env';
+import { dbConfig, describeDb, env, type DbConfig } from '../config/env';
 import { logger } from '../utils/logger';
 import type { DbAdapter, ExecuteResult, UpsertDialect } from '../core/types';
 
@@ -38,22 +38,39 @@ export async function ping(pool: Pool): Promise<{ ok: boolean; version: string; 
 }
 
 /**
- * เลือก syntax ของ ON DUPLICATE KEY UPDATE ให้เหมาะกับเวอร์ชัน MySQL
- *  - MySQL >= 8.0.19 : ใช้ alias (มาตรฐานใหม่)
- *  - ต่ำกว่านั้น       : ใช้ VALUES(col)
+ * ตัดสิน syntax ของ ON DUPLICATE KEY UPDATE จากสตริงเวอร์ชันของเซิร์ฟเวอร์ (pure function — เทสต์ได้)
+ *
+ * ข้อควรระวัง: MariaDB รายงานเวอร์ชันเป็น "10.6.x-MariaDB" หรือ "5.5.5-10.6.x-MariaDB"
+ * ซึ่งตัวเลขสูงกว่า MySQL 8.x แต่ **MariaDB ไม่รองรับ alias `AS new`** ต้องใช้ VALUES()
+ */
+export function dialectFromVersion(version: string): UpsertDialect {
+  if (/mariadb/i.test(version)) return 'odku-values';
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!m) return 'odku-values';
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  const patch = Number(m[3]);
+  const supportsAlias = major > 8 || (major === 8 && (minor > 0 || (minor === 0 && patch >= 19)));
+  return supportsAlias ? 'odku-alias' : 'odku-values';
+}
+
+/**
+ * เลือก syntax ของ ON DUPLICATE KEY UPDATE ให้เหมาะกับเซิร์ฟเวอร์
+ *  - MariaDB        : ใช้ VALUES(col) เสมอ (MariaDB ไม่รองรับ alias `AS new`)
+ *  - MySQL >= 8.0.19 : ใช้ alias ตามมาตรฐานใหม่
+ *  - MySQL ต่ำกว่านั้น : ใช้ VALUES(col)
  */
 export async function detectDialect(pool: Pool): Promise<UpsertDialect> {
   try {
+    if (env.DB_DIALECT === 'mariadb') {
+      logger.debug('detectDialect', { dialect: 'odku-values', reason: 'บังคับด้วย DB_DIALECT=mariadb' });
+      return 'odku-values';
+    }
     const [rows] = await pool.query('SELECT VERSION() AS v');
     const version = String((rows as Array<{ v: string }>)[0]?.v ?? '0');
-    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-    if (!m) return 'odku-values';
-    const major = Number(m[1]);
-    const minor = Number(m[2]);
-    const patch = Number(m[3]);
-    const supportsAlias = major > 8 || (major === 8 && (minor > 0 || (minor === 0 && patch >= 19)));
-    logger.debug('detectDialect', { version, dialect: supportsAlias ? 'odku-alias' : 'odku-values' });
-    return supportsAlias ? 'odku-alias' : 'odku-values';
+    const dialect = dialectFromVersion(version);
+    logger.debug('detectDialect', { version, dialect });
+    return dialect;
   } catch {
     return 'odku-values';
   }

@@ -10,7 +10,7 @@
 | รายการ | รุ่น/รายละเอียด |
 |---|---|
 | Node.js | 18.18+ (ทดสอบด้วย v24) |
-| MySQL | 5.7 / 8.0+ (เชื่อมต่อเป็น **Remote Server**) |
+| MySQL | 5.7 / 8.0+ หรือ **MariaDB 10.x** (เชื่อมต่อเป็น **Remote Server**) |
 | ระบบปฏิบัติการ | Windows / Linux / macOS |
 
 ---
@@ -84,7 +84,7 @@ npm run dev -- jobs
 | `-t, --target <name>` | target แรก | เลือก target ในไฟล์ mapping |
 | `--on-error <skip\|abort>` | `skip` | `abort` = ย้อนกลับทั้งหมดเมื่อพบข้อผิดพลาด |
 | `--batch-size <n>` | `1` | รวมหลายแถวต่อคำสั่ง INSERT (เร็วขึ้นเมื่อไฟล์ใหญ่) |
-| `--dry-run` | — | ตรวจสอบอย่างเดียว ไม่เขียนลง DB |
+| `--dry-run` | — | ตรวจสอบอย่างเดียว **ไม่เขียนลง DB จริง** แต่ยังรายงานได้ว่าจะเพิ่มใหม่/อัปเดตกี่แถว |
 
 > เมื่อ `--batch-size > 1` และคำสั่งรวมแถวล้มเหลว ระบบจะ fallback ไปทำทีละแถวอัตโนมัติ
 > เพื่อหาแถวที่มีปัญหาจริง ๆ โดยไม่ทำให้ทั้งชุดล้มเหลว
@@ -168,11 +168,20 @@ targets:
 
 ## 6. พฤติกรรมการเขียนลงฐานข้อมูล
 
-- ใช้ `INSERT INTO ... ON DUPLICATE KEY UPDATE` โดยอิง unique key ของตาราง (ระบบเลือก syntax ตามเวอร์ชัน MySQL อัตโนมัติ: `AS new` สำหรับ 8.0.19+ และ `VALUES()` สำหรับรุ่นเก่า)
+- ใช้ `INSERT INTO ... ON DUPLICATE KEY UPDATE` โดยอิง unique key ของตาราง
+- ระบบเลือก syntax อัตโนมัติจาก `VERSION()` ของเซิร์ฟเวอร์:
+  | เซิร์ฟเวอร์ | syntax ที่ใช้ |
+  |---|---|
+  | MySQL ≥ 8.0.19 | `INSERT ... AS new ON DUPLICATE KEY UPDATE col = new.col` |
+  | MySQL < 8.0.19 | `INSERT ... ON DUPLICATE KEY UPDATE col = VALUES(col)` |
+  | **MariaDB (ทุกรุ่น)** | `INSERT ... ON DUPLICATE KEY UPDATE col = VALUES(col)` ← MariaDB ไม่รองรับ alias `AS new` |
+- บังคับชนิดเซิร์ฟเวอร์เองได้ด้วย `DB_DIALECT=auto|mysql|mariadb` ใน `.env` (ค่าเริ่มต้น `auto` = ตรวจจับเอง)
 - ทุกงานรันใน **transaction เดียว** — ถ้า `onError=abort` จะ rollback ทั้งหมด
-- นับผลได้แม่นยำ: **เพิ่มใหม่ / อัปเดต / ไม่เปลี่ยน / ผิดพลาด** (อิง `affectedRows` ตามหลักของ MySQL)
+- นับผลได้แม่นยำทั้งบน MySQL และ MariaDB: **เพิ่มใหม่ / อัปเดต / ไม่เปลี่ยน / ผิดพลาด**
+  - MariaDB คืน `affectedRows=1` ทั้งตอน insert ใหม่และ update ที่ค่าไม่เปลี่ยน ระบบจึงตรวจ key ที่มีอยู่ล่วงหน้า 1 คำสั่งก่อนเขียน เพื่อแยกสองกรณีนี้
 - แถวที่ผิดพลาดจะถูกข้ามโดยไม่กระทบแถวอื่น และถูกบันทึกลงตาราง `sync_job_error` พร้อมเลขแถว
 - ชื่อตาราง/คอลัมน์ถูก escape ด้วย backtick ทุกจุด (ป้องกัน SQL injection) และใช้ prepared statement เสมอ
+- `--dry-run` (CLI) และปุ่ม **ทดลองนำเข้า (ไม่เขียน DB)** (Web UI) จะ **ไม่เขียนอะไรลงฐานข้อมูลเลย** และไม่บันทึกประวัติงาน แต่ยังรายงานได้ว่าจะเพิ่มใหม่/อัปเดตกี่แถว
 
 ### ตารางระบบที่ระบบสร้างให้อัตโนมัติ
 

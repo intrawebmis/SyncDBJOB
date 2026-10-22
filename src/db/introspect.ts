@@ -4,7 +4,8 @@ import { logger } from '../utils/logger';
 
 export async function listTables(db: DbAdapter, database: string): Promise<TableInfo[]> {
   const rows = await db.query<Array<Record<string, unknown>>>(
-    `SELECT TABLE_NAME AS name, TABLE_TYPE AS type, TABLE_ROWS AS rows, TABLE_COMMENT AS comment
+    // `rows` เป็น reserved word ใน MariaDB 10.6+ จึงต้องใส่ backtick
+    `SELECT TABLE_NAME AS name, TABLE_TYPE AS type, TABLE_ROWS AS \`rows\`, TABLE_COMMENT AS \`comment\`
        FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = ?
       ORDER BY TABLE_NAME`,
@@ -30,7 +31,8 @@ export async function listTables(db: DbAdapter, database: string): Promise<Table
 }
 
 export async function getColumns(db: DbAdapter, table: string, database?: string): Promise<ColumnInfo[]> {
-  const params: unknown[] = database ? [database, table] : [table];
+  // ลำดับพารามิเตอร์ต้องตรงกับลำดับ ? ใน SQL เสมอ: TABLE_NAME ก่อน แล้วค่อย TABLE_SCHEMA
+  const params: unknown[] = database ? [table, database] : [table];
   const where = database ? 'AND TABLE_SCHEMA = ?' : '';
   const rows = await db.query<Array<Record<string, unknown>>>(
     `SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, ORDINAL_POSITION
@@ -54,7 +56,7 @@ export async function getColumns(db: DbAdapter, table: string, database?: string
 }
 
 export async function getPrimaryKeys(db: DbAdapter, table: string, database?: string): Promise<string[]> {
-  const params: unknown[] = database ? [database, table] : [table];
+  const params: unknown[] = database ? [table, database] : [table];
   const where = database ? 'AND TABLE_SCHEMA = ?' : '';
   const rows = await db.query<Array<{ COLUMN_NAME: string }>>(
     `SELECT COLUMN_NAME
@@ -67,7 +69,7 @@ export async function getPrimaryKeys(db: DbAdapter, table: string, database?: st
 }
 
 export async function tableExists(db: DbAdapter, table: string, database?: string): Promise<boolean> {
-  const params: unknown[] = database ? [database, table] : [table];
+  const params: unknown[] = database ? [table, database] : [table];
   const where = database ? 'AND TABLE_SCHEMA = ?' : '';
   const rows = await db.query<Array<{ c: number }>>(
     `SELECT COUNT(*) AS c FROM information_schema.TABLES WHERE TABLE_NAME = ? ${where}`,

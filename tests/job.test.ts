@@ -102,6 +102,56 @@ describe('runSyncJob', () => {
     expect(db.tables.get('customers')).toHaveLength(1);
   });
 
+  it('นับ unchanged ถูกต้องแม้ MariaDB คืน affectedRows=1 เมื่อค่าไม่เปลี่ยน', async () => {
+    // MariaDB 10.6 คืน affectedRows=1 ทั้งตอน insert ใหม่และ update ที่ค่าเดิม
+    // ระบบต้องตรวจ key ที่มีอยู่ก่อนเขียน จึงจะแยกสองกรณีได้
+    const file = await makeWorkbook('mariadb-same.xlsx', [['C001', 'บริษัท ก', '1000', '2024-01-31']]);
+    const db = new FakeDb();
+    db.keyColumns = ['code'];
+    db.mariadbUnchangedAffectedRows = 1;
+
+    const first = await runSyncJob({ db, filePath: file, target: target() });
+    expect(first.inserted).toBe(1);
+    expect(first.updated).toBe(0);
+    expect(first.unchanged).toBe(0);
+
+    const second = await runSyncJob({ db, filePath: file, target: target() });
+    expect(second.inserted).toBe(0);
+    expect(second.updated).toBe(0);
+    expect(second.unchanged).toBe(1);
+  });
+
+  it('dryRun ไม่เขียนอะไรลงฐานข้อมูล', async () => {
+    const file = await makeWorkbook('dryrun.xlsx', [
+      ['C001', 'บริษัท ก', '1000', '2024-01-31'],
+      ['C002', 'บริษัท ข', '2000', '2024-02-01'],
+    ]);
+    const db = new FakeDb();
+    db.keyColumns = ['code'];
+
+    const result = await runSyncJob({ db, filePath: file, target: target(), dryRun: true });
+
+    expect(result.inserted).toBe(2);
+    expect(result.updated).toBe(0);
+    // ไม่มีแถวใดถูกเขียนลงตาราง
+    expect(db.tables.get('customers') ?? []).toHaveLength(0);
+    const writes = db.statements.filter((s) => /^INSERT/i.test(s.sql.trim()));
+    expect(writes).toHaveLength(0);
+  });
+
+  it('dryRun รายงานว่าจะอัปเดตกี่แถวเมื่อ key มีอยู่แล้ว', async () => {
+    const file = await makeWorkbook('dryrun-existing.xlsx', [['C001', 'บริษัท ก', '1000', '2024-01-31']]);
+    const db = new FakeDb();
+    db.keyColumns = ['code'];
+
+    await runSyncJob({ db, filePath: file, target: target() });
+    const dry = await runSyncJob({ db, filePath: file, target: target(), dryRun: true });
+
+    expect(dry.inserted).toBe(0);
+    expect(dry.updated).toBe(1);
+    expect(db.tables.get('customers')).toHaveLength(1);
+  });
+
   it('ข้ามแถวที่ข้อมูลไม่ผ่านการตรวจสอบ และนำเข้าแถวที่ถูกต้องต่อ', async () => {
     const file = await makeWorkbook('invalid.xlsx', [
       ['C001', 'บริษัท ก', '1000', '2024-01-31'],

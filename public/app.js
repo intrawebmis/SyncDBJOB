@@ -267,6 +267,7 @@ function renderMapping() {
   if (state.mapping.length === 0) {
     body.innerHTML = '<tr><td colspan="8" class="muted">ยังไม่มีข้อมูล — อัปโหลดไฟล์ Excel ก่อน</td></tr>';
     $('btnValidate').disabled = true;
+    $('btnDryRun').disabled = true;
     $('btnSync').disabled = true;
     $('btnSave').disabled = true;
     $('btnCreateTable').disabled = true;
@@ -311,6 +312,7 @@ function renderMapping() {
 
   const ready = state.mapping.some((m) => m.use && m.db);
   $('btnValidate').disabled = !ready;
+  $('btnDryRun').disabled = !ready;
   $('btnSync').disabled = !ready;
   $('btnSave').disabled = !ready;
   $('btnCreateTable').disabled = !ready;
@@ -405,6 +407,34 @@ $('btnSync').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = 'นำเข้าข้อมูลเข้า MySQL';
+  }
+});
+
+$('btnDryRun').addEventListener('click', async () => {
+  if (!state.fileId) return;
+  const btn = $('btnDryRun');
+  btn.disabled = true;
+  btn.textContent = 'กำลังทดลอง…';
+  try {
+    const data = await api('/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileId: state.fileId, config: collectConfig(), dryRun: true }),
+    });
+    renderResult(data.result);
+    toast(
+      'ทดลองเสร็จแล้ว (ไม่ได้เขียนลงฐานข้อมูล): จะเพิ่มใหม่ ' +
+        data.result.inserted +
+        ' แถว, อัปเดต ' +
+        data.result.updated +
+        ' แถว',
+      'ok',
+    );
+  } catch (err) {
+    toast('ทดลองไม่สำเร็จ: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'ทดลองนำเข้า (ไม่เขียน DB)';
   }
 });
 

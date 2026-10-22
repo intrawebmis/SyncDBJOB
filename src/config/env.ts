@@ -21,6 +21,14 @@ const EnvSchema = z.object({
   DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   DB_POOL_SIZE: z.coerce.number().int().positive().default(10),
 
+  /**
+   * ชนิดของเซิร์ฟเวอร์ฐานข้อมูล — กำหนด syntax ของ ON DUPLICATE KEY UPDATE
+   *  - auto   : ตรวจจับอัตโนมัติ (ค่าเริ่มต้น)
+   *  - mysql  : MySQL 8.0.19+ ใช้ alias `AS new`
+   *  - mariadb: MariaDB ใช้ VALUES() (MariaDB ไม่รองรับ alias)
+   */
+  DB_DIALECT: z.enum(['auto', 'mysql', 'mariadb']).default('auto'),
+
   APP_HOST: z.string().default('127.0.0.1'),
   APP_PORT: z.coerce.number().int().positive().default(3000),
 
