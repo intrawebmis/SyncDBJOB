@@ -418,6 +418,56 @@ docker compose logs -f
 > 💡 รหัสผ่าน DB ใน `.env` มีอักขระ `$` — ถ้าจะ `source .env` ใน bash ให้หนีคำสั่ง `$` ก่อน
 > (`APP_PASSWORD='pa$$word'` → `'pa$$word'`) แต่ไฟล์ systemd/nginx อ่านค่าแบบตรง ๆ ไม่ต้องหนี
 
+### 9.5 ทางเลือก C — Shared Hosting ที่ติดตั้งใต้โฟลเดอร์ย่อย (เช่น `ebcitrade.com/SyncJOB`)
+
+ใช้เมื่อโฮสติ้งมีโฟลเดอร์ย่อยให้ (shared hosting / cPanel / Plesk) และ URL คือ
+`https://ebcitrade.com/SyncJOB/` — แอปรองรับโหมดนี้อยู่แล้ว
+
+#### สิ่งที่ต้องเตรียม
+
+| รายการ | รายละเอียด |
+|---|---|
+| Node.js | ต้องมี **v18.18+** (แนะนำ v22) — cPanel ให้เลือกเวอร์ชันได้ที่ "Setup Node.js App" |
+| ที่อยู่แอป | โฟลเดอร์ที่มี `package.json` เช่น `/home/USER/SyncJOB` |
+| Startup file | `dist/cli.js` (ต้อง build ก่อน) |
+| Startup command | `node dist/cli.js serve` |
+| พอร์ต | ถ้าโฮสติ้งส่งค่า `PORT` มาให้ ระบบจะใช้ให้อัตโนมัติ (ไม่ต้องตั้ง `APP_PORT`) |
+| ฐานพาธ | ตั้ง `APP_BASE_PATH=/SyncJOB` ใน `.env` |
+| สิทธิ์เขียน | โฟลเดอร์ `storage/` ต้องเขียนได้ (ไฟล์อัปโหลด + mapping + ไฟล์ template + คีย์ session) |
+| โครงสร้าง URL | ต้องทำให้ `https://ebcitrade.com/SyncJOB/api/*` ถูกส่งต่อมาที่แอป (rewrite / proxy) |
+
+#### ขั้นตอน (ตัวอย่าง cPanel)
+
+1. **อัปโหลดโค้ด** เข้าโฟลเดอร์ `SyncJOB` (ผ่าน FTP / Git Versioning / SSH)
+2. **สร้าง `.env`** ในโฟลเดอร์นั้น (คัดลอกจาก `.env.example` แล้วแก้ค่า DB)
+
+   ```bash
+   APP_BASE_PATH=/SyncJOB
+   APP_HOST=127.0.0.1
+   APP_PORT=3000          # เว้นว่างไว้ก็ได้ ถ้าโฮสติ้งส่ง PORT มาให้
+   DB_HOST=ebcitrade.com
+   DB_USER=...
+   DB_PASSWORD=...
+   DB_NAME=...
+   ```
+
+3. **Build** (ถ้าโฮสติ้งให้รันคำสั่งตอนตั้งค่าใส่ `npm ci && npm run build`)
+4. **ตั้งค่า Node.js App**
+   - Node.js version: 22
+   - Application root: `SyncJOB`
+   - Application URL: `SyncJOB`
+   - Application startup file: `dist/cli.js`
+   - Startup command: `serve`
+5. **Restart** แอป แล้วเปิด `https://ebcitrade.com/SyncJOB/`
+
+#### ข้อควรระวัง
+
+- ถ้าโฮสติ้ง**หยุดแอปหลังไม่มีคนเข้าใช้งาน** (idle timeout) ให้ตั้งค่าให้เปิดทำงานต่อเนื่อง
+- ถ้าโฮสติ้งให้ Node.js เขียนไฟล์ไม่ได้นอกโฟลเดอร์แอป ให้ย้าย `STORAGE_DIR` ไปยังโฟลเดอร์ที่เขียนได้
+- ถ้าต้องการรันงานตามเวลา (cron) ให้ใช้ CLI ของแอปแทน เช่น
+  `node dist/cli.js sync --file uploads/xxx.xlsx --mapping mappings/yyy.json`
+- ตรวจสอบว่า DB เปิดให้เชื่อมต่อจากโฮสติ้งได้ (พอร์ต 3306 ขาออก)
+
 ---
 
 ## 10. หมายเหตุ / ข้อควรระวัง

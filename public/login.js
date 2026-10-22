@@ -1,6 +1,23 @@
 /* SyncDBJOB — สคริปต์หน้าเข้าสู่ระบบ (ไม่ต้อง build) */
 'use strict';
 
+/**
+ * ฐานพาธที่แอปถูก mount ไว้ (เช่น '/SyncJOB' หรือ '' ถ้าอยู่ที่ root)
+ *
+ * คำนวณจาก URL ของไฟล์สคริปต์เอง → รองรับทั้งการติดตั้งที่ root
+ * และการติดตั้งใต้ subfolder โดยไม่ต้องตั้งค่าอะไรเพิ่ม
+ */
+const BASE = (() => {
+  try {
+    const src = document.currentScript && document.currentScript.src;
+    if (!src) return '';
+    const pathname = new URL(src, window.location.href).pathname;
+    return pathname.replace(/\/[^/]*$/, '');
+  } catch {
+    return '';
+  }
+})();
+
 const $ = (id) => document.getElementById(id);
 
 const form = $('loginForm');
@@ -16,11 +33,11 @@ function showError(text) {
 /* ถ้าระบบปิดการล็อกอินไว้ (APP_AUTH_ENABLED=false) ให้ข้ามหน้านี้ไปเลย */
 async function checkAuthEnabled() {
   try {
-    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    const res = await fetch(BASE + '/api/auth/me', { credentials: 'same-origin' });
     if (res.ok) {
       const data = await res.json();
       if (data.authEnabled === false) {
-        window.location.replace('/');
+        window.location.replace(BASE + '/');
         return true;
       }
     }
@@ -37,7 +54,7 @@ form.addEventListener('submit', async (e) => {
   msg.hidden = true;
 
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(BASE + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -62,7 +79,7 @@ form.addEventListener('submit', async (e) => {
       return;
     }
 
-    window.location.replace('/');
+    window.location.replace(BASE + '/');
   } catch (err) {
     showError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ: ' + err.message);
   } finally {

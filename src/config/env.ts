@@ -30,7 +30,17 @@ const EnvSchema = z.object({
   DB_DIALECT: z.enum(['auto', 'mysql', 'mariadb']).default('auto'),
 
   APP_HOST: z.string().default('127.0.0.1'),
-  APP_PORT: z.coerce.number().int().positive().default(3000),
+  /**
+   * พอร์ตของ Web UI
+   * ถ้าไม่ได้ตั้งเอง ระบบจะใช้ค่า PORT ที่ host ให้มา (cPanel / Passenger / Heroku-style)
+   */
+  APP_PORT: z.coerce.number().int().positive().default(Number(process.env.PORT) || 3000),
+
+  /**
+   * ฐานพาธที่แอปถูก mount ไว้ (ถ้าว่าง = อยู่ที่ root)
+   * ใช้กรณีติดตั้งใต้ subfolder เช่น ebcitrade.com/SyncJOB → APP_BASE_PATH=/SyncJOB
+   */
+  APP_BASE_PATH: z.string().default(''),
 
   // ===== ระบบล็อกอิน =====
   /** เปิด/ปิดระบบล็อกอิน (true = ต้องล็อกอินก่อนใช้งาน) */

@@ -1,6 +1,23 @@
 /* SyncDBJOB — Web UI (ไม่ต้อง build) */
 'use strict';
 
+/**
+ * ฐานพาธที่แอปถูก mount ไว้ (เช่น '/SyncJOB' หรือ '' ถ้าอยู่ที่ root)
+ *
+ * คำนวณจาก URL ของไฟล์สคริปต์เอง → รองรับทั้งการติดตั้งที่ root
+ * และการติดตั้งใต้ subfolder โดยไม่ต้องตั้งค่าอะไรเพิ่ม
+ */
+const BASE = (() => {
+  try {
+    const src = document.currentScript && document.currentScript.src;
+    if (!src) return '';
+    const pathname = new URL(src, window.location.href).pathname;
+    return pathname.replace(/\/[^/]*$/, '');
+  } catch {
+    return '';
+  }
+})();
+
 const state = {
   fileId: null,
   fileName: '',
@@ -30,13 +47,13 @@ const esc = (v) =>
     .replace(/"/g, '&quot;');
 
 function redirectToLogin() {
-  if (window.location.pathname !== '/login') {
-    window.location.href = '/login';
+  if (window.location.pathname !== BASE + '/login') {
+    window.location.href = BASE + '/login';
   }
 }
 
 async function api(path, options = {}) {
-  const res = await fetch('/api' + path, { credentials: 'same-origin', ...options });
+  const res = await fetch(BASE + '/api' + path, { credentials: 'same-origin', ...options });
   const text = await res.text();
   let data = {};
   try {
@@ -57,7 +74,7 @@ async function api(path, options = {}) {
 /* ---------------- ผู้ใช้ที่ล็อกอิน ---------------- */
 async function loadMe() {
   try {
-    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    const res = await fetch(BASE + '/api/auth/me', { credentials: 'same-origin' });
     if (res.status === 401) {
       redirectToLogin();
       return;
@@ -79,11 +96,11 @@ async function loadMe() {
 
 $('btnLogout').addEventListener('click', async () => {
   try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    await fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } catch {
     /* ไม่เป็นไร */
   }
-  window.location.href = '/login';
+  window.location.href = BASE + '/login';
 });
 
 let toastTimer = null;
@@ -528,7 +545,7 @@ $('btnTemplate').addEventListener('click', async () => {
       body: JSON.stringify({ config: collectConfig(), outFile: `template_${state.targetTable}.xlsx` }),
     });
     const link = $('templateLink');
-    link.href = '/api/exports/' + encodeURIComponent(data.name);
+    link.href = BASE + '/api/exports/' + encodeURIComponent(data.name);
     link.textContent = 'ดาวน์โหลด ' + data.name;
     link.hidden = false;
     toast('สร้างไฟล์ template แล้ว: ' + data.name, 'ok');

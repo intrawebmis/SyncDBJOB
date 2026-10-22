@@ -7,13 +7,18 @@
  *   set SMOKE_USERNAME=admin
  *   set SMOKE_PASSWORD=xxxx
  * หรือปิดระบบล็อกอินชั่วคราวด้วย APP_AUTH_ENABLED=false
+ *
+ * ถ้าแอปติดตั้งใต้โฟลเดอร์ย่อย (APP_BASE_PATH) ให้ระบุเพิ่ม:
+ *   set SMOKE_BASE_PATH=/SyncJOB
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const baseUrl = process.argv[2] || 'http://127.0.0.1:3000';
+const serverUrl = (process.argv[2] || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const basePath = (process.env.SMOKE_BASE_PATH || '').replace(/\/+$/, '');
+const baseUrl = serverUrl + basePath;
 const sample = path.join(root, 'data', 'example-customers.xlsx');
 const username = process.env.SMOKE_USERNAME || '';
 const password = process.env.SMOKE_PASSWORD || '';
@@ -51,7 +56,6 @@ async function json(url, options) {
 }
 
 console.log(`ทดสอบ Web UI ที่ ${baseUrl}\n`);
-
 // ============================================================ 0) ระบบล็อกอิน
 console.log('0) ระบบล็อกอิน');
 const healthBefore = await json(baseUrl + '/api/health');
@@ -66,6 +70,8 @@ if (authEnabled) {
   check('หน้า /login เข้าถึงได้โดยไม่ต้องล็อกอิน', loginPage.status === 200);
   const loginHtml = await loginPage.text();
   check('หน้า /login มีฟอร์มเข้าสู่ระบบ', loginHtml.includes('loginForm'));
+  check('หน้า /login ไม่มี placeholder {{BASE}} ค้าง', !loginHtml.includes('{{BASE}}'));
+  check('หน้า /login โหลดไฟล์แบบ relative (รองรับติดตั้งใต้ subfolder)', loginHtml.includes('href="login.css"'));
 
   const loginCss = await fetch(baseUrl + '/login.css');
   check('โหลด login.css ได้', loginCss.status === 200);
@@ -116,6 +122,8 @@ check('หน้าเว็บตอบกลับ 200', home.status === 200);
 const html = await home.text();
 check('มีชื่อระบบ SyncDBJOB', html.includes('SyncDB'));
 check('มีปุ่มออกจากระบบ', html.includes('btnLogout'));
+check('หน้าเว็บโหลดไฟล์แบบ relative (รองรับติดตั้งใต้ subfolder)', html.includes('src="app.js"'));
+check('หน้าเว็บไม่มี placeholder {{BASE}} ค้าง', !html.includes('{{BASE}}'));
 const js = await fetch(baseUrl + '/app.js', withCookie());
 check('โหลด app.js ได้', js.status === 200);
 const css = await fetch(baseUrl + '/styles.css', withCookie());

@@ -51,13 +51,13 @@ export function requireAuth(auth: AuthService) {
 }
 
 /** บังคับล็อกอินสำหรับหน้าเว็บ — redirect ไปหน้า /login */
-export function requireAuthPage(auth: AuthService) {
+export function requireAuthPage(auth: AuthService, basePath = '') {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!auth.enabled || req.authUser) {
       next();
       return;
     }
-    res.redirect(302, '/login');
+    res.redirect(302, `${basePath}/login`);
   };
 }
 

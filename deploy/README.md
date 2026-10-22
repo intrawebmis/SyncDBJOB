@@ -219,6 +219,54 @@ curl -u admin:รหัสผ่าน http://syncdbjob.ebcitrade.com/api/health
 
 ---
 
+## 7.1 ติดตั้งใต้โฟลเดอร์ย่อย (เช่น `ebcitrade.com/SyncJOB`)
+
+ถ้าต้องการให้แอปอยู่ใต้ path เดียวกับเว็บอื่นในโดเมนเดียวกัน (ไม่ต้องตั้ง subdomain ใหม่)
+
+**1) ตั้งค่าใน `.env`**
+
+```bash
+APP_BASE_PATH=/SyncJOB
+```
+
+**2) ตั้ง nginx ให้ proxy เฉพาะ path นั้น**
+
+```nginx
+location /SyncJOB/ {
+    proxy_pass         http://127.0.0.1:3000/SyncJOB/;
+    proxy_http_version 1.1;
+
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+
+    client_max_body_size 120M;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout    300s;
+    proxy_read_timeout    300s;
+    proxy_request_buffering off;
+}
+
+# เข้าโดเมนตรง ๆ ให้เด้งไปที่โฟลเดอร์
+location = /SyncJOB {
+    return 301 /SyncJOB/;
+}
+```
+
+**3) ตรวจสอบ**
+
+```bash
+sudo systemctl restart syncdbjob
+curl http://127.0.0.1:3000/SyncJOB/api/health
+# ต้องได้ {"ok":true,...}
+```
+
+> หน้าเว็บใช้ URL แบบ relative ทั้งหมด → ติดตั้งที่ root หรือใต้ subfolder ได้โดยไม่ต้องแก้โค้ด
+> ถ้าเปลี่ยน `APP_BASE_PATH` ภายหลัง ให้เคลียร์ cache ของเบราว์เซอร์ด้วย (redirect ไม่ถูก cache แล้ว)
+
+---
+
 ## 8. อัปเดตโค้ด (ครั้งถัดไป)
 
 ```bash
