@@ -1,0 +1,43 @@
+services:
+  syncdbjob:
+    build: .
+    image: syncdbjob:1.0.0
+    container_name: syncdbjob
+    restart: unless-stopped
+
+    # ผูกกับ localhost เท่านั้น — ให้ nginx/เครื่องอื่นเข้าถึง
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    env_file:
+      - .env
+
+    environment:
+      NODE_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: "3000"
+      STORAGE_DIR: storage
+      LOG_LEVEL: info
+
+    volumes:
+      # เก็บไฟล์อัปโหลด + mapping ไว้ข้ามการ deploy ใหม่
+      - ./storage:/app/storage
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

@@ -246,7 +246,91 @@ DB_HOST=127.0.0.1 DB_NAME=syncdb_test DB_USER=root DB_PASSWORD=yourpass DB_TEST=
 
 ---
 
-## 9. หมายเหตุ / ข้อควรระวัง
+## 9. การติดตั้งบนเซิร์ฟเวอร์ (Deploy)
+
+### 9.1 ข้อควรระวังก่อนขึ้น Internet
+
+> 🔴 **ระบบยังไม่มีระบบ Login ภายในแอป** — ใครก็ตามที่เข้าถึง URL ได้
+> จะอัปโหลดไฟล์ และ **เขียน/แก้ไขข้อมูลในฐานข้อมูลจริง** ได้ทันที
+>
+> **ต้องปิดก่อนเสมอ** โดยเลือก 1 วิธี:
+> 1. **Basic Auth ของ nginx** (เร็วที่สุด — มีไฟล์ตัวอย่างให้แล้วใน `deploy/nginx.conf`)
+> 2. ผูกพอร์ตไว้ที่ `127.0.0.1` แล้วเข้าผ่าน VPN / SSH tunnel เท่านั้น (เหมาะกับระบบภายใน)
+> 3. เพิ่มระบบ Login ในตัวแอปเอง (แจ้งได้เพื่อให้เพิ่มให้)
+
+### 9.2 ทางเลือก A — Ubuntu/Debian VPS (nginx + systemd) แนะนำ
+
+```bash
+sudo bash deploy/install.sh
+```
+
+สคริปต์จะทำให้อัตโนมัติ: ติดตั้ง Node.js 22, ดึงโค้ดจาก GitHub, `npm ci` + build,
+สร้างผู้ใช้ระบบ `syncdb` (ไม่มี login shell), ติดตั้ง systemd service และ nginx
+
+จากนั้นทำต่อ:
+
+```bash
+# 1) ใส่ค่าการเชื่อมต่อฐานข้อมูลจริง
+sudo nano /opt/syncdbjob/.env
+
+# 2) ใส่โดเมนจริงในไฟล์ nginx (2 จุด)
+sudo nano /etc/nginx/sites-available/syncdbjob
+
+# 3) สร้างรหัสผ่านสำหรับเข้า Web UI
+sudo htpasswd -c /etc/nginx/.htpasswd admin
+
+# 4) ทดสอบเชื่อมต่อ DB
+cd /opt/syncdbjob && npm run dev -- check
+
+# 5) เริ่มบริการ
+sudo systemctl start syncdbjob
+sudo systemctl status syncdbjob
+
+# 6) ขอใบรับรอง SSL
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d example.com
+
+# 7) ทดสอบ
+curl -u admin http://127.0.0.1:3000/api/health
+```
+
+คำสั่งจัดการบริการ:
+
+```bash
+sudo systemctl restart syncdbjob     # เริ่มใหม่
+sudo systemctl stop syncdbjob        # หยุด
+sudo journalctl -u syncdbjob -f      # ดู log สด
+```
+
+### 9.3 ทางเลือก B — Docker
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+ตัวอย่าง `docker-compose.yml` ผูกพอร์ตไว้ที่ `127.0.0.1:3000` เท่านั้น (ต้องให้ nginx เป็นตัวรับคำขอ)
+และ mount `./storage` ไว้เพื่อไม่ให้ mapping/ไฟล์ที่อัปโหลดหายเมื่อ deploy ใหม่
+
+### 9.4 สิ่งที่ต้องดูแลหลังขึ้น Host
+
+| เรื่อง | วิธีจัดการ |
+|---|---|
+| ไฟล์ `.env` | `chmod 600` + อยู่ใน `.gitignore` แล้ว — **ห้าม commit** |
+| โฟลเดอร์ `storage/` | ต้องมีสิทธิ์เขียนของผู้ใช้ service (`syncdb`) |
+| `process.cwd()` | โค้ดอ้างอิง `public/` และ `storage/` ผ่าน cwd — service ต้องตั้ง `WorkingDirectory` ให้ถูก |
+| ไฟล์อัปโหลด | `storage/uploads/` สูงสุด 100MB/ไฟล์ ควรล้างไฟล์เก่าเป็นระยะ |
+| ประวัติงาน | เก็บในตาราง `sync_job_log` / `sync_job_error` (อยู่ในฐานข้อมูลจริง) |
+| nginx | `client_max_body_size 120M` ต้อง ≥ ขนาดไฟล์ที่อัปโหลดได้ |
+| สิทธิ์ DB | ควรใช้ user ที่มีสิทธิ์เฉพาะ `SELECT, INSERT, UPDATE, CREATE` บนตารางที่เกี่ยวข้อง |
+| สำเนาสำรอง | `mysqldump` ตารางประวัติงาน + โฟลเดอร์ `storage/` เป็นระยะ |
+
+> 💡 รหัสผ่าน DB ใน `.env` มีอักขระ `$` — ถ้าจะ `source .env` ใน bash ให้หนีคำสั่ง `$` ก่อน
+> (`APP_PASSWORD='pa$$word'` → `'pa$$word'`) แต่ไฟล์ systemd/nginx อ่านค่าแบบตรง ๆ ไม่ต้องหนี
+
+---
+
+## 10. หมายเหตุ / ข้อควรระวัง
 
 - ระบบรองรับการ **เพิ่มและอัปเดต** เท่านั้น ไม่มีการลบแถวที่ไม่อยู่ในไฟล์ (เพื่อความปลอดภัย) — ถ้าต้องการลบให้เขียน SQL เพิ่มเติมเอง
 - `mode: upsert` ต้องกำหนด `keys` เสมอ และ `keys` ต้องอยู่ใน `columns`

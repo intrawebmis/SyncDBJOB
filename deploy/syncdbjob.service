@@ -1,0 +1,37 @@
+[Unit]
+Description=SyncDBJOB - นำเข้าข้อมูลจาก Excel เข้า MySQL/MariaDB
+Documentation=https://github.com/intrawebmis/SyncDBJOB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=syncdb
+Group=syncdb
+
+# สำคัญ: ต้องอยู่ในโฟลเดอร์โปรเจกต์ เพราะโค้ดอ้างอิง public/ และ storage/ ผ่าน process.cwd()
+WorkingDirectory=/opt/syncdbjob
+
+ExecStart=/usr/bin/node dist/cli.js serve --host 127.0.0.1 --port 3000
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+# ป้องกันเขียนทับไฟล์ระบบ (เขียนได้เฉพาะ storage/)
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/syncdbjob/storage
+PrivateTmp=true
+NoNewPrivileges=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=syncdbjob
+
+[Install]
+WantedBy=multi-user.target

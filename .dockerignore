@@ -1,0 +1,14 @@
+node_modules
+dist
+storage/uploads/*
+storage/mappings/*
+storage/*.xlsx
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.vscode
+.idea
