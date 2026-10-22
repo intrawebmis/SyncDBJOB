@@ -1,0 +1,59 @@
+# ==========================================================
+#  ตัวอย่างไฟล์ Mapping สำหรับนำเข้าข้อมูล Excel -> MySQL
+#  ใช้: npx tsx src/cli.ts sync data.xlsx --config config/example.mapping.yaml
+#  รองรับทั้งไฟล์ .yaml และ .json
+# ==========================================================
+version: 1
+name: ข้อมูลลูกค้า
+description: นำเข้าข้อมูลลูกค้าจากไฟล์ Excel Template เข้าตาราง customers
+
+targets:
+  - name: customers
+    table: customers
+    mode: upsert                 # upsert = INSERT ... ON DUPLICATE KEY UPDATE
+    keys: [customer_code]        # คอลัมน์ที่ใช้เป็นตัวระบุแถว
+    sheet: ลูกค้า                # ชื่อ sheet ในไฟล์ Excel (ละไว้ = ใช้ sheet แรก)
+    headerRow: 1                 # แถวที่เป็นหัวตาราง
+    startRow: 2                  # แถวแรกของข้อมูล
+    skipEmptyRows: true
+
+    columns:
+      - excel: รหัสลูกค้า
+        db: customer_code
+        type: string
+        required: true
+        isKey: true
+        maxLength: 20
+
+      - excel: ชื่อลูกค้า
+        db: customer_name
+        type: string
+        required: true
+        maxLength: 120
+
+      - excel: ยอดเงิน
+        db: balance
+        type: decimal
+        scale: 2
+        min: 0
+
+      - excel: สถานะ
+        db: status
+        type: string
+        enum: [active, inactive]
+        default: active
+
+      - excel: วันที่สมัคร
+        db: registered_at
+        type: date
+
+      # คอลัมน์ที่ไม่ได้อยู่ในไฟล์ Excel — ใส่ค่าคงที่ให้อัตโนมัติ
+      - excel: ''
+        db: source
+        type: string
+        constant: excel
+
+      - excel: ''
+        db: synced_at
+        type: datetime
+        constant: '{{now}}'      # ค่าปัจจุบันที่เวลารันงาน

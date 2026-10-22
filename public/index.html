@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SyncDBJOB — นำเข้าข้อมูล Excel เข้า MySQL</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">SyncDB<span>JOB</span></div>
+      <div class="conn" id="connInfo">กำลังตรวจสอบการเชื่อมต่อ…</div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="import">นำเข้าข้อมูล</button>
+      <button class="tab" data-tab="mappings">การตั้งค่า</button>
+      <button class="tab" data-tab="jobs">ประวัติการทำงาน</button>
+      <button class="tab" data-tab="tables">ตารางในฐานข้อมูล</button>
+    </nav>
+
+    <main>
+      <!-- ============ นำเข้าข้อมูล ============ -->
+      <section id="tab-import">
+        <div class="card">
+          <h2>1. เลือกไฟล์ Excel</h2>
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" accept=".xlsx,.xlsm" hidden />
+            <p><strong>คลิก</strong> เพื่อเลือกไฟล์ .xlsx หรือลากไฟล์มาวางตรงนี้</p>
+            <p class="muted">รองรับไฟล์ .xlsx / .xlsm เท่านั้น</p>
+          </div>
+          <div class="grid-3" id="fileMeta" hidden>
+            <label>ไฟล์<input type="text" id="fileName" readonly /></label>
+            <label>Sheet<select id="sheetSelect"></select></label>
+            <label>แถวหัวตาราง<input type="number" id="headerRow" min="1" value="1" /></label>
+          </div>
+          <div class="actions">
+            <button id="btnPreview" class="btn" disabled>ดูตัวอย่างข้อมูล</button>
+          </div>
+          <div id="previewWrap" hidden>
+            <h3>ตัวอย่างข้อมูล</h3>
+            <div class="table-scroll"><table id="previewTable"></table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>2. ตารางปลายทาง</h2>
+          <div class="grid-3">
+            <label>ชื่อตารางใน MySQL<select id="targetTable"></select></label>
+            <label>ชื่อการตั้งค่า<input type="text" id="mappingName" placeholder="เช่น customers" /></label>
+            <label>โหมด<select id="syncMode">
+              <option value="upsert">Upsert (เพิ่มใหม่ / อัปเดตของเดิม)</option>
+              <option value="insert">Insert เท่านั้น</option>
+            </select></label>
+          </div>
+          <div class="actions">
+            <button id="btnLoadSchema" class="btn" disabled>ดึงโครงสร้างตารางและจับคู่อัตโนมัติ</button>
+            <button id="btnCreateTable" class="btn btn-ghost" disabled>สร้างตาราง (DDL)</button>
+            <button id="btnTemplate" class="btn btn-ghost" disabled>สร้างไฟล์ Template</button>
+          </div>
+          <div id="ddlOut" class="code" hidden></div>
+        </div>
+
+        <div class="card">
+          <h2>3. การจับคู่คอลัมน์</h2>
+          <p class="muted">เลือกคอลัมน์ต้นทางจาก Excel และคอลัมน์ปลายทางใน MySQL ทำเครื่องหมาย ✓ ที่คอลัมน์ Key สำหรับการ Upsert</p>
+          <div class="table-scroll">
+            <table id="mapTable">
+              <thead>
+                <tr>
+                  <th style="width:40px">ใช้</th>
+                  <th>คอลัมน์ใน Excel</th>
+                  <th>คอลัมน์ใน MySQL</th>
+                  <th>ชนิดข้อมูล</th>
+                  <th>บังคับ</th>
+                  <th>Key</th>
+                  <th>ค่าที่อนุญาต (คั่นด้วย ,)</th>
+                  <th>ความยาวสูงสุด</th>
+                </tr>
+              </thead>
+              <tbody id="mapBody"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button id="btnValidate" class="btn" disabled>ตรวจสอบข้อมูล (ยังไม่เขียน DB)</button>
+            <button id="btnSync" class="btn btn-primary" disabled>นำเข้าข้อมูลเข้า MySQL</button>
+            <button id="btnSave" class="btn btn-ghost" disabled>บันทึกการตั้งค่า</button>
+          </div>
+          <div id="resultBox" class="result" hidden></div>
+        </div>
+      </section>
+
+      <!-- ============ การตั้งค่า ============ -->
+      <section id="tab-mappings" hidden>
+        <div class="card">
+          <h2>การตั้งค่าที่บันทึกไว้</h2>
+          <div class="table-scroll"><table id="mappingsTable"></table></div>
+          <div class="actions">
+            <button id="btnReloadMappings" class="btn btn-ghost">โหลดใหม่</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ ประวัติ ============ -->
+      <section id="tab-jobs" hidden>
+        <div class="card">
+          <h2>ประวัติการนำเข้าข้อมูล</h2>
+          <div class="table-scroll"><table id="jobsTable"></table></div>
+          <div class="actions"><button id="btnReloadJobs" class="btn btn-ghost">โหลดใหม่</button></div>
+        </div>
+      </section>
+
+      <!-- ============ ตาราง ============ -->
+      <section id="tab-tables" hidden>
+        <div class="card">
+          <h2>ตารางในฐานข้อมูล</h2>
+          <div class="table-scroll"><table id="tablesTable"></table></div>
+          <div class="actions"><button id="btnReloadTables" class="btn btn-ghost">โหลดใหม่</button></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
